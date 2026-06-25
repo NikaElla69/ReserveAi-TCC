@@ -1,0 +1,77 @@
+version: '3.9'
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: reserveai_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: reserveai_db
+      MYSQL_USER: reserveai
+      MYSQL_PASSWORD: reserveai123
+    ports:
+      - '3307:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - reserveai_network
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-uroot', '-proot']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reserveai_backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      APP_URL: http://localhost:3000
+      FRONTEND_URL: http://localhost:8080
+      DATABASE_URL: mysql://reserveai:reserveai123@mysql:3306/reserveai_db
+      JWT_SECRET: jwt_secret_key
+      JWT_EXPIRES_IN: 1d
+      REFRESH_TOKEN_SECRET: refresh_token_secret
+      REFRESH_TOKEN_EXPIRES_IN_DAYS: 7
+      BCRYPT_SALT_ROUNDS: 10
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 100
+      SWAGGER_ENABLED: true
+      UPLOAD_DIR: uploads
+      MAX_FILE_SIZE: 5242880
+    ports:
+      - '3000:3000'
+    volumes:
+      - backend_uploads:/app/uploads
+    networks:
+      - reserveai_network
+    command: sh -c "npx prisma migrate deploy && node dist/server.js"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: reserveai_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '8080:80'
+    networks:
+      - reserveai_network
+
+volumes:
+  mysql_data:
+  backend_uploads:
+
+networks:
+  reserveai_network:
+    driver: bridge

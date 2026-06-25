@@ -1,0 +1,302 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  OWNER
+  ADMIN
+}
+
+enum ReservationStatus {
+  PENDENTE
+  CONFIRMADA
+  CANCELADA
+  REJEITADA
+  CONCLUIDA
+  NO_SHOW
+}
+
+enum TableStatus {
+  DISPONIVEL
+  OCUPADA
+  MANUTENCAO
+  INATIVA
+}
+
+enum ReviewStatus {
+  PUBLICADA
+  OCULTA
+}
+
+model User {
+  id             String          @id @default(uuid()) @db.Char(36)
+  tenantId       String?         @db.Char(36)
+  nome           String          @db.VarChar(100)
+  email          String          @unique @db.VarChar(150)
+  cpf            String          @unique @db.VarChar(14)
+  telefone       String?         @db.VarChar(20)
+  senhaHash      String          @map("senha_hash") @db.VarChar(255)
+  papel          UserRole        @default(CUSTOMER)
+  ativo          Boolean         @default(true)
+  emailVerificado Boolean        @default(false) @map("email_verificado")
+  ultimoLogin    DateTime?       @map("ultimo_login")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  tenant         Tenant?         @relation(fields: [tenantId], references: [id])
+  restaurantes   Restaurant[]    @relation("OwnerRestaurants")
+  reservas       Reservation[]
+  reviews        Review[]
+  refreshTokens  RefreshToken[]
+  auditLogs      AuditLog[]
+
+  @@map("users")
+}
+
+model Restaurant {
+  id                  String               @id @default(uuid()) @db.Char(36)
+  tenantId            String               @db.Char(36)
+  proprietarioId      String               @map("proprietario_id") @db.Char(36)
+  nome                String               @db.VarChar(160)
+  tipoCulinaria       String? @map("tipo_culinaria") @db.VarChar(100)
+  descricao           String?              @db.Text
+  telefone            String?              @db.VarChar(20)
+  email               String?              @db.VarChar(150)
+  endereco            String               @db.VarChar(255)
+  cidade              String               @db.VarChar(100)
+  estado              String               @db.VarChar(100)
+  cep                 String?              @db.VarChar(9)
+  logo                String?              @db.VarChar(255)
+  bannerPrincipal     String?              @map("banner_principal") @db.VarChar(255)
+  capacidade          Int
+  horarioFuncionamento Json                @map("horario_funcionamento")
+  politicaReservas    String?              @map("politica_reservas") @db.Text
+  latitude            Decimal?             @db.Decimal(10, 7)
+  longitude           Decimal?             @db.Decimal(10, 7)
+  slug                String               @unique @db.VarChar(120)
+  dominioPersonalizado String?             @map("dominio_personalizado") @db.VarChar(190)
+  avaliacaoMedia      Decimal?             @default(0) @map("avaliacao_media") @db.Decimal(3, 2)
+  ativo               Boolean              @default(true)
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  proprietario        User                 @relation("OwnerRestaurants", fields: [proprietarioId], references: [id])
+  mesas               Table[]
+  reservas            Reservation[]
+  reviews             Review[]
+  imagens             RestaurantImage[]
+  configuracoes       RestaurantSetting?
+
+  @@index([tenantId])
+  @@index([proprietarioId])
+  @@map("restaurants")
+}
+
+model Table {
+  id             String        @id @default(uuid()) @db.Char(36)
+  restauranteId  String        @map("restaurante_id") @db.Char(36)
+  numero         String        @db.VarChar(10)
+  capacidade     Int
+  status         TableStatus   @default(DISPONIVEL)
+  localizacao    String?       @db.VarChar(100)
+  ativo          Boolean       @default(true)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  restaurante    Restaurant    @relation(fields: [restauranteId], references: [id], onDelete: Cascade)
+  reservas       Reservation[]
+
+  @@unique([restauranteId, numero])
+  @@index([restauranteId])
+  @@map("tables")
+}
+
+model Reservation {
+  id                 String             @id @default(uuid()) @db.Char(36)
+  usuarioId          String             @map("usuario_id") @db.Char(36)
+  restauranteId      String             @map("restaurante_id") @db.Char(36)
+  mesaId             String             @map("mesa_id") @db.Char(36)
+  dataReserva        DateTime           @map("data_reserva") @db.Date
+  horarioReserva     DateTime           @map("horario_reserva") @db.Time(0)
+  quantidadePessoas  Int                @map("quantidade_pessoas")
+  status             ReservationStatus  @default(PENDENTE)
+  justificativa      String?            @db.Text
+  observacoes        String?            @db.Text
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  usuario            User               @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  restaurante        Restaurant         @relation(fields: [restauranteId], references: [id], onDelete: Cascade)
+  mesa               Table              @relation(fields: [mesaId], references: [id], onDelete: Cascade)
+  review             Review?
+
+  @@index([usuarioId])
+  @@index([restauranteId])
+  @@index([mesaId])
+  @@index([dataReserva, horarioReserva])
+  @@map("reservations")
+}
+
+model RestaurantSetting {
+  id               String      @id @default(uuid()) @db.Char(36)
+  restaurantId     String      @unique @map("restaurant_id") @db.Char(36)
+  primaryColor     String      @map("primary_color") @db.VarChar(7)
+  secondaryColor   String      @map("secondary_color") @db.VarChar(7)
+  bannerImage      String?     @map("banner_image") @db.VarChar(255)
+  customSlug       String      @unique @map("custom_slug") @db.VarChar(120)
+  instagram        String?     @db.VarChar(120)
+  facebook         String?     @db.VarChar(120)
+  whatsapp         String?     @db.VarChar(30)
+  website          String?     @db.VarChar(190)
+  descricaoCurta   String?     @map("descricao_curta") @db.VarChar(255)
+  seoTitle         String?     @map("seo_title") @db.VarChar(160)
+  seoDescription   String?     @map("seo_description") @db.VarChar(255)
+  ogImage          String?     @map("og_image") @db.VarChar(255)
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  restaurant       Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("restaurant_settings")
+}
+
+model RestaurantImage {
+  id             String      @id @default(uuid()) @db.Char(36)
+  restaurantId   String      @map("restaurant_id") @db.Char(36)
+  imageUrl       String      @map("image_url") @db.VarChar(255)
+  title          String?     @db.VarChar(150)
+  displayOrder   Int         @default(0) @map("display_order")
+  altText        String?     @map("alt_text") @db.VarChar(180)
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  restaurant     Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, displayOrder])
+  @@map("restaurant_images")
+}
+
+model Review {
+  id             String       @id @default(uuid()) @db.Char(36)
+  usuarioId      String       @map("usuario_id") @db.Char(36)
+  restauranteId  String       @map("restaurante_id") @db.Char(36)
+  reservaId      String       @unique @map("reserva_id") @db.Char(36)
+  nota           Int
+  comentario     String?      @db.Text
+  status         ReviewStatus @default(PUBLICADA)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  usuario        User         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  restaurante    Restaurant   @relation(fields: [restauranteId], references: [id], onDelete: Cascade)
+  reserva        Reservation  @relation(fields: [reservaId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([restauranteId])
+  @@map("reviews")
+}
+
+model RefreshToken {
+  id            String    @id @default(uuid()) @db.Char(36)
+  usuarioId     String    @map("usuario_id") @db.Char(36)
+  token         String    @unique @db.VarChar(255)
+  expiresAt     DateTime  @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  ipAddress     String?   @map("ip_address") @db.VarChar(45)
+  userAgent     String?   @map("user_agent") @db.VarChar(255)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  usuario       User      @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id             String    @id @default(uuid()) @db.Char(36)
+  usuarioId      String    @map("usuario_id") @db.Char(36)
+  acao           String    @db.VarChar(100)
+  tipoEntidade   String    @map("tipo_entidade") @db.VarChar(100)
+  idEntidade     String    @map("id_entidade") @db.Char(36)
+  mudancas       Json?
+  enderecoIp     String?   @map("endereco_ip") @db.VarChar(45)
+  userAgent      String?   @map("user_agent") @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  usuario        User      @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Tenant {
+  id               String           @id @default(uuid()) @db.Char(36)
+  nome             String           @unique @db.VarChar(150)
+  subdominio       String           @unique @db.VarChar(100)
+  plano            String           @default("free") @db.VarChar(50)
+  ativo            Boolean          @default(true)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  usuarios         User[]
+  restaurantes     Restaurant[]
+  configuracoes    TenantSetting[]
+  recursos         TenantFeature[]
+  apiKeys          TenantApiKey[]
+
+  @@map("tenants")
+}
+
+model TenantSetting {
+  id              String    @id @default(uuid()) @db.Char(36)
+  tenantId        String    @map("tenant_id") @db.Char(36)
+  chave           String    @db.VarChar(100)
+  valor           String    @db.Text
+  tipo            String    @default("string") @db.VarChar(50)
+  descricao       String?   @db.VarChar(255)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, chave])
+  @@map("tenant_settings")
+}
+
+model TenantFeature {
+  id              String    @id @default(uuid()) @db.Char(36)
+  tenantId        String    @map("tenant_id") @db.Char(36)
+  nomeFeature     String    @map("nome_feature") @db.VarChar(100)
+  ativo           Boolean   @default(true)
+  limiteUso       Int?      @map("limite_uso")
+  usoAtual        Int       @default(0) @map("uso_atual")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, nomeFeature])
+  @@map("tenant_features")
+}
+
+model TenantApiKey {
+  id              String    @id @default(uuid()) @db.Char(36)
+  tenantId        String    @map("tenant_id") @db.Char(36)
+  nome            String    @db.VarChar(100)
+  chaveApi        String    @unique @map("chave_api") @db.VarChar(255)
+  permissoes      Json?
+  ativo           Boolean   @default(true)
+  expiresAt       DateTime? @map("expires_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_api_keys")
+}
